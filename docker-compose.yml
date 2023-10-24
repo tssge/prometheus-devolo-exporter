@@ -1,0 +1,10 @@
+---
+version: "3.8"
+services:
+  exporter:
+    image: tssge/prometheus-devolo-exporter:latest
+    container_name: DevoloExporter
+    volumes:
+      - ./config.yml:/app/config.yml
+    ports:
+      - 5642:5642
