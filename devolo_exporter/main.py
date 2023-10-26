@@ -11,19 +11,20 @@ devolo_exporter Prometheus Plugin to monitor status of Devolo Magic 2 LAN
 '''
 
 import asyncio
-import click
 import logging
 import threading
 import time
-from deepmerge import Merger
-from devolo_plc_api import Device
 from http.server import HTTPServer
 from pathlib import Path
+from socketserver import ThreadingMixIn
+from typing import Union, Dict
+
+import click
+from deepmerge import Merger
+from devolo_plc_api import Device
 from prometheus_client import CollectorRegistry, MetricsHandler
 from prometheus_client.metrics_core import GaugeMetricFamily, InfoMetricFamily
 from ruamel.yaml import YAML
-from socketserver import ThreadingMixIn
-from typing import Union, Dict
 
 IP_ADDRESS = "ip_address"
 PASSWORD = "password"
@@ -124,14 +125,14 @@ class PlcNetCollector(object):
             'devolo_tx_rate',
             'Device tx rate',
             unit="megabits",
-            labels=labels + ["to"],
+            labels=['from_hostname', 'to_hostname', 'from_ip_address', 'to_ip_address', 'network_name'],
         )
 
         rx_rate_metrics = GaugeMetricFamily(
             'devolo_rx_rate',
             'Device rx rate',
             unit="megabits",
-            labels=labels + ["to"],
+            labels=['from_hostname', 'to_hostname', 'from_ip_address', 'to_ip_address', 'network_name'],
         )
 
         try:
@@ -142,6 +143,7 @@ class PlcNetCollector(object):
         with Device(ip=self.ip_address) as dpa:
             dpa.password = self.password
             network = dpa.plcnet.get_network_overview()
+            mac_to_device = {}
             for device in network.devices:
                 label_values = [device.user_device_name, device.ipv4_address, device.user_network_name]
                 device_information_metrics.add_metric(label_values, {
@@ -156,11 +158,15 @@ class PlcNetCollector(object):
                     'network_name': device.user_network_name,
                     'ipv4_address': device.ipv4_address,
                 })
+                mac_to_device[device.mac_address] = device
                 connected_devices_metric.add_metric(label_values, len(device.bridged_devices))
-                for data_rate in network.data_rates:
-                    if data_rate.mac_address_from == device.mac_address:
-                        tx_rate_metrics.add_metric(label_values + [data_rate.mac_address_to], float(data_rate.tx_rate))
-                        rx_rate_metrics.add_metric(label_values + [data_rate.mac_address_to], float(data_rate.rx_rate))
+            for data_rate in network.data_rates:
+                to_device = mac_to_device[data_rate.mac_address_to]
+                from_device = mac_to_device[data_rate.mac_address_from]
+                label_values = [from_device.user_device_name, to_device.user_device_name, from_device.ipv4_address,
+                                to_device.ipv4_address, from_device.user_network_name]
+                tx_rate_metrics.add_metric(label_values,float(data_rate.tx_rate))
+                rx_rate_metrics.add_metric(label_values, float(data_rate.rx_rate))
 
         yield device_information_metrics
         yield connected_devices_metric
