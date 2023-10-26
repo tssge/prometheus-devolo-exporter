@@ -61,3 +61,16 @@ python3 -m venv venv
 venv/bin/pip3 install -r requirements.txt
 venv/bin/python3 run.py config.yml
 ```
+
+## Grafana dashboard
+
+There is a Grafana dashboard available at [https://grafana.com/grafana/dashboards/19847-ethernet-over-powerline/](https://grafana.com/grafana/dashboards/19847-ethernet-over-powerline/).
+
+### Dashboard features
+
+- Basic information of each device
+- PHY datarates between each adapter in the network
+- Amount of devices connected to each adapter and total
+- Ability to view multiple adapter's statistics simultaneously
+
+![Example metrics in Grafana](./preview.png)
