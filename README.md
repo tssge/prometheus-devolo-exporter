@@ -17,15 +17,33 @@ devolo_device_info_info{attached_to_gateway="False",friendly_version="7.12.9.142
 # TYPE devolo_connected_devices_amount gauge
 devolo_connected_devices_amount{hostname="devolo-hostname",ip_address="123.123.123.123",network_name="custom-network"} 3.0
 devolo_connected_devices_amount{hostname="devolo-hostname2",ip_address="123.123.123.124",network_name="custom-network"} 1.0
+# HELP devolo_uptime Device uptime (unitless, strictly monotonically increasing; a decrease indicates a restart)
+# TYPE devolo_uptime gauge
+devolo_uptime{hostname="devolo-hostname",ip_address="123.123.123.123",network_name="custom-network"} 123456.0
+devolo_uptime{hostname="devolo-hostname2",ip_address="123.123.123.124",network_name="custom-network"} 123400.0
+# HELP devolo_temperature_celsius Temperature of the PLC chip
+# TYPE devolo_temperature_celsius gauge
+devolo_temperature_celsius{hostname="devolo-hostname",ip_address="123.123.123.123",network_name="custom-network"} 70.9
+devolo_temperature_celsius{hostname="devolo-hostname2",ip_address="123.123.123.124",network_name="custom-network"} 65.2
+# HELP devolo_hops Number of hops to the domain master (0 = master, 1 = direct, >1 = relayed)
+# TYPE devolo_hops gauge
+devolo_hops{hostname="devolo-hostname",ip_address="123.123.123.123",network_name="custom-network"} 0.0
+devolo_hops{hostname="devolo-hostname2",ip_address="123.123.123.124",network_name="custom-network"} 1.0
+# HELP devolo_lost_maps_total Media access plans lost since the last device start
+# TYPE devolo_lost_maps_total counter
+devolo_lost_maps_total{hostname="devolo-hostname",ip_address="123.123.123.123",network_name="custom-network"} 0.0
+devolo_lost_maps_total{hostname="devolo-hostname2",ip_address="123.123.123.124",network_name="custom-network"} 178.0
 # HELP devolo_tx_rate_megabits Device tx rate
 # TYPE devolo_tx_rate_megabits gauge
-devolo_tx_rate_megabits{hostname="devolo-hostname",ip_address="123.123.123.123",network_name="custom-network",to="CAFEBABE2022"} 796.0
-devolo_tx_rate_megabits{hostname="devolo-hostname2",ip_address="123.123.123.124",network_name="custom-network",to="CAFEBABE2023"} 1249.0
+devolo_tx_rate_megabits{from_hostname="devolo-hostname",from_ip_address="123.123.123.123",network_name="custom-network",to_hostname="devolo-hostname2",to_ip_address="123.123.123.124"} 796.0
+devolo_tx_rate_megabits{from_hostname="devolo-hostname2",from_ip_address="123.123.123.124",network_name="custom-network",to_hostname="devolo-hostname",to_ip_address="123.123.123.123"} 1249.0
 # HELP devolo_rx_rate_megabits Device rx rate
 # TYPE devolo_rx_rate_megabits gauge
-devolo_rx_rate_megabits{hostname="devolo-hostname",ip_address="123.123.123.123",network_name="custom-network",to="CAFEBABE2022"} 837.0
-devolo_rx_rate_megabits{hostname="devolo-hostname2",ip_address="123.123.123.124",network_name="custom-network",to="CAFEBABE2023"} 1249.0
+devolo_rx_rate_megabits{from_hostname="devolo-hostname",from_ip_address="123.123.123.123",network_name="custom-network",to_hostname="devolo-hostname2",to_ip_address="123.123.123.124"} 837.0
+devolo_rx_rate_megabits{from_hostname="devolo-hostname2",from_ip_address="123.123.123.124",network_name="custom-network",to_hostname="devolo-hostname",to_ip_address="123.123.123.123"} 1249.0
 ```
+
+The uptime, temperature, hops and lost maps metrics are read directly from each adapter's own IP address, using the configured password for every adapter. Adapters that cannot be reached, or values the firmware does not report, are skipped.
 
 ## Usage
 

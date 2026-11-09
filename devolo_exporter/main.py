@@ -21,9 +21,9 @@ from typing import Union, Dict
 
 import click
 from deepmerge import Merger
-from devolo_plc_api import Device
+from devolo_plc_api import Device, hops, lost_maps, temperature
 from prometheus_client import CollectorRegistry, MetricsHandler
-from prometheus_client.metrics_core import GaugeMetricFamily, InfoMetricFamily
+from prometheus_client.metrics_core import CounterMetricFamily, GaugeMetricFamily, InfoMetricFamily
 from ruamel.yaml import YAML
 
 IP_ADDRESS = "ip_address"
@@ -104,6 +104,40 @@ class PlcNetCollector(object):
         self.ip_address = ip_address
         self.password = password
 
+    async def _collect_device_diagnostics(self, device, label_values, uptime_metrics, temperature_metrics,
+                                          hops_metrics, lost_maps_metrics):
+        """
+        Query a single adapter directly for uptime and support-info based diagnostics. Failures are logged and
+        skipped, so that one unreachable adapter does not break the whole scrape. Values that the firmware does not
+        report are omitted.
+
+        The async API is used on purpose: the sync wrappers run every call in its own event loop, which breaks the
+        HTTP connection reuse as soon as a device is queried more than once.
+        """
+        if not device.ipv4_address:
+            self.logger.warning(f"No IP address known for {device.user_device_name}, skipping diagnostics")
+            return
+        try:
+            async with Device(ip=device.ipv4_address) as dpa:
+                dpa.password = self.password
+                if dpa.device is None:
+                    self.logger.warning(f"{device.ipv4_address} does not offer the device API, skipping diagnostics")
+                    return
+                uptime = await dpa.device.async_uptime()
+                support_info = await dpa.device.async_get_support_info()
+        except Exception as e:
+            self.logger.warning(f"Could not collect diagnostics from {device.ipv4_address}: {e}")
+            return
+
+        uptime_metrics.add_metric(label_values, float(uptime))
+        for metric, value in (
+                (temperature_metrics, temperature(support_info)),
+                (hops_metrics, hops(support_info)),
+                (lost_maps_metrics, lost_maps(support_info)),
+        ):
+            if value is not None:
+                metric.add_metric(label_values, float(value))
+
     def collect(self):
         self.logger.info("Collecting from " + self.ip_address)
         labels = ["hostname", "ip_address", "network_name"]
@@ -135,14 +169,35 @@ class PlcNetCollector(object):
             labels=['from_hostname', 'to_hostname', 'from_ip_address', 'to_ip_address', 'network_name'],
         )
 
-        try:
-            asyncio.get_event_loop()
-        except RuntimeError:
-            asyncio.set_event_loop(asyncio.new_event_loop())
+        uptime_metrics = GaugeMetricFamily(
+            'devolo_uptime',
+            'Device uptime (unitless, strictly monotonically increasing; a decrease indicates a restart)',
+            labels=labels,
+        )
 
-        with Device(ip=self.ip_address) as dpa:
-            dpa.password = self.password
-            network = dpa.plcnet.get_network_overview()
+        temperature_metrics = GaugeMetricFamily(
+            'devolo_temperature',
+            'Temperature of the PLC chip',
+            unit="celsius",
+            labels=labels,
+        )
+
+        hops_metrics = GaugeMetricFamily(
+            'devolo_hops',
+            'Number of hops to the domain master (0 = master, 1 = direct, >1 = relayed)',
+            labels=labels,
+        )
+
+        lost_maps_metrics = CounterMetricFamily(
+            'devolo_lost_maps',
+            'Media access plans lost since the last device start',
+            labels=labels,
+        )
+
+        async def gather():
+            async with Device(ip=self.ip_address) as dpa:
+                dpa.password = self.password
+                network = await dpa.plcnet.async_get_network_overview()
             mac_to_device = {}
             for device in network.devices:
                 label_values = [device.user_device_name, device.ipv4_address, device.user_network_name]
@@ -160,15 +215,24 @@ class PlcNetCollector(object):
                 })
                 mac_to_device[device.mac_address] = device
                 connected_devices_metric.add_metric(label_values, len(device.bridged_devices))
+                await self._collect_device_diagnostics(
+                    device, label_values, uptime_metrics, temperature_metrics, hops_metrics, lost_maps_metrics
+                )
             for data_rate in network.data_rates:
                 to_device = mac_to_device[data_rate.mac_address_to]
                 from_device = mac_to_device[data_rate.mac_address_from]
                 label_values = [from_device.user_device_name, to_device.user_device_name, from_device.ipv4_address,
                                 to_device.ipv4_address, from_device.user_network_name]
-                tx_rate_metrics.add_metric(label_values,float(data_rate.tx_rate))
+                tx_rate_metrics.add_metric(label_values, float(data_rate.tx_rate))
                 rx_rate_metrics.add_metric(label_values, float(data_rate.rx_rate))
 
+        asyncio.run(gather())
+
         yield device_information_metrics
+        yield uptime_metrics
+        yield temperature_metrics
+        yield hops_metrics
+        yield lost_maps_metrics
         yield connected_devices_metric
         yield tx_rate_metrics
         yield rx_rate_metrics
